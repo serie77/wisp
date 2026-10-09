@@ -3,6 +3,7 @@ import { GlyphHero } from "@/components/GlyphScene";
 import { FlipBoard, Terminal } from "@/components/Kinetic";
 import { BlockArt, Glyph, GlyphArt, GlyphField, GlyphLines, type BlockPreset, type Preset } from "@/components/Glyph";
 import { CodeBlock } from "@/components/CodeBlock";
+import { ContractBox } from "@/components/ContractBox";
 import { ActivityRow, PostCard } from "@/components/Feed";
 import { WispMark } from "@/components/Logo";
 import { TryIt } from "@/components/TryIt";
@@ -75,6 +76,7 @@ export default async function Home() {
             <Link href="/ai" className="btn btn-ink">Docs</Link>
             <Link href="/society" className="btn btn-line">Society</Link>
           </div>
+          <ContractBox mint={env.tokenMint || null} className="mt-6" />
         </div>
       </GlyphHero>
 

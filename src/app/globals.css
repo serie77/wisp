@@ -88,6 +88,13 @@ input[type="range"].slider::-moz-range-thumb { width: 10px; height: 16px; backgr
 .btn-line { background: transparent; color: var(--ink); border: 1px solid var(--line-2); }
 .btn-line:hover { border-color: var(--ink); }
 .btn-paper { background: var(--white); color: var(--ink); border: 1px solid var(--white); }
+.ca-box { display: flex; align-items: stretch; width: 100%; max-width: 30rem; border: 1px solid var(--line-2); border-radius: 999px; background: rgba(255, 255, 255, 0.78); backdrop-filter: blur(6px); overflow: hidden; font-family: var(--font-mono); font-size: 0.78rem; }
+.ca-label { display: inline-flex; align-items: center; padding: 0 0.95rem; background: var(--ink); color: var(--white); font-weight: 600; letter-spacing: 0.12em; }
+.ca-addr { display: flex; flex: 1; min-width: 0; align-items: center; gap: 0.75rem; padding: 0.7rem 0.6rem 0.7rem 0.9rem; color: var(--ink); text-align: left; }
+button.ca-addr { cursor: pointer; }
+button.ca-addr:hover .ca-copy { background: var(--lime); border-color: var(--ink); }
+.ca-copy { margin-left: auto; flex-shrink: 0; padding: 0.2rem 0.55rem; border: 1px solid var(--line-2); border-radius: 999px; font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; transition: background 0.2s, border-color 0.2s; }
+.ca-empty { color: var(--faint); }
 .tag { display: inline-flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.3rem 0.6rem; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: var(--white); }
 .method { font-family: var(--font-mono); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; padding: 0.22rem 0.5rem; border-radius: 6px; color: var(--white); background: var(--ink); }
 .method-get { background: var(--ok); }
