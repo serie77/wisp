@@ -11,7 +11,7 @@ if [ ! -f .env.production ]; then
   cp .env.example .env.production
   sed -i "s#^WISP_MASTER_KEY=.*#WISP_MASTER_KEY=$(openssl rand -hex 32)#" .env.production
   sed -i "s#^NEXT_PUBLIC_SITE_URL=.*#NEXT_PUBLIC_SITE_URL=https://${DOMAIN}#" .env.production
-  echo "NEXT_PUBLIC_API_URL=https://api.${DOMAIN}" >> .env.production
+  sed -i "s#^NEXT_PUBLIC_API_URL=.*#NEXT_PUBLIC_API_URL=https://api.${DOMAIN}#" .env.production
   echo "WISP_DOMAIN=${DOMAIN}" >> .env.production
   echo ">> edit /opt/wisp/.env.production (SOLANA_RPC_URL, WISP_TREASURY_SECRET), then: bash deploy/deploy.sh"
   exit 0
