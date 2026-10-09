@@ -55,11 +55,11 @@ function Flap({ target }: { target: string }) {
 }
 export function FlipLine({ text, width = 32 }: { text: string; width?: number }) {
   const t = text.toUpperCase().padEnd(width).slice(0, width);
-  return <div className="mono flex text-[0.9rem] leading-[1.9] tracking-[0.04em] text-white/90">{t.split("").map((c, i) => <Flap key={i} target={c} />)}</div>;
+  return <div className="mono flex text-[clamp(0.6rem,3vw,0.9rem)] leading-[1.9] tracking-[0.04em] text-white/90">{t.split("").map((c, i) => <Flap key={i} target={c} />)}</div>;
 }
 export function FlipBoard({ lines, width = 34, className = "" }: { lines: string[]; width?: number; className?: string }) {
   return (
-    <div className={`rounded-[18px] bg-ink p-4 ${className}`}>
+    <div className={`overflow-hidden rounded-[18px] bg-ink p-4 ${className}`}>
       <div className="mb-2 flex items-center justify-between font-mono text-[0.62rem] uppercase tracking-[0.14em] text-white/40"><span>departures · on-chain</span><span className="live-dot" /></div>
       <div className="divide-y divide-white/5">{lines.map((l, i) => <FlipLine key={`${i}-${l}`} text={l} width={width} />)}</div>
     </div>
@@ -154,9 +154,9 @@ export function Terminal({ scripts, title = "agent session", className = "" }: {
     return () => clearTimeout(t);
   }, [si, li, ch, script]);
   return (
-    <div className={className}>
+    <div className={`min-w-0 ${className}`}>
       <div className="term-bar"><span className="term-dot" /><span className="term-dot" /><span className="term-dot" /><span className="ml-2">{title}</span></div>
-      <pre className="code scrollbar-thin min-h-[280px] !rounded-t-none">
+      <pre className="code scrollbar-thin min-h-[280px] !rounded-t-none whitespace-pre-wrap [overflow-wrap:anywhere]">
         {script.slice(0, li + 1).map((l, idx) => (
           <div key={idx} className={l.kind === "cmd" ? "text-white" : "text-white/55"}>
             {l.kind === "cmd" ? <span className="text-lime">$ </span> : ""}

@@ -239,17 +239,17 @@ export function GlyphHero({ children, initial, mobile, controls = true, classNam
   const set = <K extends keyof SceneParams>(k: K) => (v: SceneParams[K]) => setQ((s) => ({ ...s, [k]: v }));
   const scrimBg = scrim === "none" ? undefined : scrim === "left"
     ? `linear-gradient(90deg, ${pal.bg} 0%, ${pal.bg}e6 22%, ${pal.bg}00 58%)`
-    : `linear-gradient(0deg, ${pal.bg} 0%, ${pal.bg}cc 30%, ${pal.bg}00 70%)`;
+    : `linear-gradient(0deg, ${pal.bg} 0%, ${pal.bg}e6 38%, ${pal.bg}00 78%)`;
   return (
     <section className={`glyph-hero relative overflow-hidden ${className}`} data-dark={pal.dark} style={{ background: pal.bg, color: pal.dark ? "#ffffff" : "#0b0b0c" }}>
       <div className="absolute inset-0"><GlyphScene params={q} /></div>
       {scrimBg && <div className="pointer-events-none absolute inset-0" style={{ background: scrimBg }} />}
       <div className="relative">{children}</div>
       {controls && (
-        <div className="tool absolute bottom-5 right-5 z-10 hidden w-[292px] text-ink shadow-[0_20px_60px_-30px_rgba(0,0,0,0.45)] md:block">
+        <div className="tool absolute bottom-5 right-5 z-10 hidden w-[340px] text-ink shadow-[0_20px_60px_-30px_rgba(0,0,0,0.45)] md:block">
           <Slider label="Glyph size" value={q.cell} min={7} max={28} step={1} onChange={set("cell")} />
           <Slider label="Contrast" value={q.contrast} min={0.6} max={2.2} step={0.05} onChange={set("contrast")} fmt={(v) => v.toFixed(2)} />
-          <div className="ctl !grid-cols-[auto_1fr]"><span>Scene</span><div className="seg justify-self-end">{SCENES.map((s, i) => <button key={s} aria-pressed={q.scene === i} onClick={() => set("scene")(i)}>{s}</button>)}</div></div>
+          <div className="ctl !grid-cols-1 !gap-2"><span>Scene</span><div className="seg flex w-full">{SCENES.map((s, i) => <button key={s} className="flex-1 !px-1" aria-pressed={q.scene === i} onClick={() => set("scene")(i)}>{s}</button>)}</div></div>
           <div className="ctl !grid-cols-[1fr_auto]"><span>Mark</span><div className="seg">{(["glyph", "block", "dot"] as Mark[]).map((m) => <button key={m} aria-pressed={q.mark === m} onClick={() => set("mark")(m)}>{m}</button>)}</div></div>
           <div className="ctl !grid-cols-[1fr_auto]"><span>Palette</span><div className="flex gap-2">{SCENE_PALETTES.map((pp, i) => (
             <button key={pp.name} title={pp.name} aria-pressed={q.palette === i} onClick={() => set("palette")(i)} className={`flex rounded-full border p-0.5 ${q.palette === i ? "border-ink" : "border-line"}`} style={{ background: pp.bg }}>

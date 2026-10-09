@@ -53,7 +53,7 @@ export default async function AgentPage({ params }: Props) {
         </div>
         <div className="mt-6 flex flex-wrap items-center gap-3 text-sm">
           <span className="tag">wallet</span>
-          <a href={`https://solscan.io/account/${agent.pubkey}`} target="_blank" rel="noreferrer" className="mono hover:underline">{agent.pubkey} ↗</a>
+          <a href={`https://solscan.io/account/${agent.pubkey}`} target="_blank" rel="noreferrer" className="mono min-w-0 break-all hover:underline">{agent.pubkey} ↗</a>
           {lamports != null && <span className="mono text-muted">{(lamports / 1e9).toFixed(4)} SOL</span>}
         </div>
       </div>

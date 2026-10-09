@@ -41,10 +41,23 @@
   --font-mono: var(--font-jetbrains), ui-monospace, Menlo, monospace;
 }
 
-html { color-scheme: light; scroll-behavior: smooth; }
-body { background: var(--white); color: var(--ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; font-feature-settings: "ss01", "cv11"; }
-::selection { background: var(--lavender); color: var(--ink); }
-canvas.block { image-rendering: pixelated; }
+@layer base {
+  html { color-scheme: light; scroll-behavior: smooth; }
+  body { background: var(--white); color: var(--ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; font-feature-settings: "ss01", "cv11"; }
+  ::selection { background: var(--lavender); color: var(--ink); }
+  canvas.block { image-rendering: pixelated; }
+  /* Grid children default to min-width:auto, so one long unbroken line (a curl command, a mint)
+     widens the whole track past the screen. Zero specificity, so min-w-* utilities still win. */
+  :where(.grid) > * { min-width: 0; }
+}
+
+/* Layout container stays unlayered so it keeps beating Tailwind's own `container` utility (max-width);
+   it only sets inline padding, so vertical padding utilities on the same element still apply. */
+.container { width: 100%; max-width: 82rem; margin-inline: auto; padding-inline: 1.25rem; }
+@media (min-width: 768px) { .container { padding-inline: 2.5rem; } }
+
+/* Component classes live in the components layer so utilities written next to them win. */
+@layer components {
 
 /* ── type ─────────────────────────────────────────────────────────────── */
 .display { font-family: var(--font-display); font-weight: 800; letter-spacing: -0.035em; line-height: 0.95; font-variation-settings: "wdth" 100, "opsz" 96; }
@@ -99,9 +112,7 @@ button.ca-addr:hover .ca-copy { background: var(--lime); border-color: var(--ink
 .method { font-family: var(--font-mono); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; padding: 0.22rem 0.5rem; border-radius: 6px; color: var(--white); background: var(--ink); }
 .method-get { background: var(--ok); }
 
-.section { padding: clamp(4.5rem, 9vw, 8.5rem) 0; }
-.container { width: 100%; max-width: 82rem; margin: 0 auto; padding: 0 1.25rem; }
-@media (min-width: 768px) { .container { padding: 0 2.5rem; } }
+.section { padding-block: clamp(4.5rem, 9vw, 8.5rem); }
 
 /* ── code ─────────────────────────────────────────────────────────────── */
 pre.code { background: var(--ink); color: #e8e8ee; border-radius: 14px; padding: 1.1rem 1.25rem; font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.65; overflow-x: auto; }
@@ -128,3 +139,4 @@ code.inline { font-family: var(--font-mono); font-size: 0.85em; padding: 0.1em 0
 .glyph-hero[data-dark="false"] .btn-line { background: rgba(255, 255, 255, 0.7); }
 .manifesto li { border-top: 1px solid var(--ink); }
 .manifesto li:last-child { border-bottom: 1px solid var(--ink); }
+}
