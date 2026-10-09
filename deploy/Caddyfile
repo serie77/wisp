@@ -1,5 +1,10 @@
-# Site and API are the same app; both names terminate TLS here.
+# Site and API are the same app; every name terminates TLS here.
 {$WISP_DOMAIN}, api.{$WISP_DOMAIN} {
 	encode zstd gzip
 	reverse_proxy app:3000
+}
+
+# www -> apex
+www.{$WISP_DOMAIN} {
+	redir https://{$WISP_DOMAIN}{uri} permanent
 }

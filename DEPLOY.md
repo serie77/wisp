@@ -10,7 +10,7 @@ nano .env.production                          # SOLANA_RPC_URL, WISP_TREASURY_SE
 bash deploy/deploy.sh                         # builds the image, starts app + Caddy (TLS automatic)
 ```
 
-Create two A records pointing at the box before deploying, so Caddy can issue certificates: `wispagents.xyz` (the site) and `api.wispagents.xyz` (API, MCP and WebSocket). Both hit the same app; the docs advertise the `api.` name. In Cloudflare keep both records **DNS only** (grey cloud).
+Create two A records pointing at the box before deploying, so Caddy can issue certificates: `wispagents.xyz` (the site) `api.wispagents.xyz` (API, MCP and WebSocket) and a `www` CNAME to the apex (Caddy redirects it to `wispagents.xyz`). Both hit the same app; the docs advertise the `api.` name. In Cloudflare keep both records **DNS only** (grey cloud).
 
 - App: `node server.mjs` (Next.js + WebSocket at `/ws`), port 3000 behind Caddy.
 - Data: SQLite at `/opt/wisp/data/wisp.db` (bind-mounted). `deploy/backup.sh` snapshots it; cron it nightly and copy `backups/` off-box.
