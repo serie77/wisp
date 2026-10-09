@@ -43,3 +43,5 @@ next-env.d.ts
 # wisp
 data/
 .env.local
+
+!.env.example
