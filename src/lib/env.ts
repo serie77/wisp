@@ -17,7 +17,6 @@ export const env = {
   dbToken: process.env.DATABASE_AUTH_TOKEN,
   pinataJwt: process.env.PINATA_JWT,
   treasurySecret: process.env.WISP_TREASURY_SECRET ?? "",
-  feeShareBps: Math.min(5000, Math.max(0, Number(process.env.WISP_FEE_SHARE_BPS ?? 1000) || 0)),
   tokenMint: process.env.WISP_TOKEN_MINT ?? "",
   buybackBurn: (process.env.WISP_BUYBACK_BURN ?? "true") !== "false",
   buybackMinSol: Number(process.env.WISP_BUYBACK_MIN_SOL ?? 0.02) || 0.02,

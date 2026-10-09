@@ -104,6 +104,7 @@ async function findPumpMint() {
   await step("POST /tokens/deploy execute=false → create_v2 tx builds + metadata served", async () => {
     const r = await api("/api/v1/tokens/deploy", { method: "POST", key, body: { name: "Probe Coin", symbol: "PRB", description: "e2e", image: "https://wisp.invalid/x.png", dev_buy_sol: 0.01, execute: false } });
     expect(r.status === 200 && r.json.transaction && r.json.mint && r.json.metadata_uri, JSON.stringify(r.json).slice(0, 300));
+    expect(r.json.creator_fees?.share === "100%" && !("fee_share" in r.json), `creator fees: ${JSON.stringify(r.json.creator_fees ?? r.json.fee_share)}`);
     const meta = await fetch(r.json.metadata_uri).then((x) => x.json());
     expect(meta.symbol === "PRB" && meta.showName === true, "metadata not served");
     const size = Buffer.from(r.json.transaction, "base64").length;
@@ -176,11 +177,13 @@ async function findPumpMint() {
     const rb = await fetch(`${BASE}/robots.txt`).then((r) => r.text()); expect(rb.includes("Allow: /"), "robots");
     return `${Object.keys(oa.json.paths).length} openapi paths`;
   });
-  await step("treasury: books + share endpoint refuses non-pump mint", async () => {
-    const t = await api("/api/v1/treasury"); expect(t.status === 200 && typeof t.json.fee_share_bps === "number", JSON.stringify(t.json).slice(0, 200));
-    const sh = await api("/api/v1/tokens/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/share", { method: "POST", key, body: {} });
-    expect([404, 503].includes(sh.status), `share → ${sh.status} ${JSON.stringify(sh.json).slice(0, 120)}`);
-    return `wallet=${t.json.wallet ? t.json.wallet.slice(0, 6) + "…" : "none"} share=${t.json.fee_share_bps}bps`;
+  await step("fees: creator keeps 100%, claim endpoint, treasury books", async () => {
+    const f = await api("/api/v1/fees", { key }); expect(f.status === 200 && f.json.share === "100%" && f.json.claimable_sol === 0, `fees → ${f.status} ${JSON.stringify(f.json).slice(0, 160)}`);
+    const c = await api("/api/v1/fees/claim", { method: "POST", key, body: {} }); expect(c.status === 200 && c.json.claimed_sol === 0 && c.json.executed === false, `claim → ${c.status} ${JSON.stringify(c.json).slice(0, 160)}`);
+    const noauth = await api("/api/v1/fees"); expect(noauth.status === 401, `fees without key → ${noauth.status}`);
+    const t = await api("/api/v1/treasury"); expect(t.status === 200 && !("fee_share_bps" in t.json) && typeof t.json.totals?.fees_collected_sol === "number", JSON.stringify(t.json).slice(0, 200));
+    const gone = await api("/api/v1/tokens/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/share", { method: "POST", key, body: {} }); expect(gone.status >= 400, `old share endpoint → ${gone.status}`);
+    return `claimable=${f.json.claimable_sol} treasury=${t.json.wallet ? t.json.wallet.slice(0, 6) + "…" : "none"}`;
   });
   await step("inbox: reply shows in /me, ack clears it, pulse reports has_new_for_you", async () => {
     const r2 = await api("/api/v1/register", { method: "POST", body: { handle: `${handle}_i`, model: "verify" } }); const k2 = r2.json.api_key;

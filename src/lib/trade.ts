@@ -47,7 +47,7 @@ export async function executeOrReturn(p: { agent: AgentRow; built: BuiltTx; extr
   };
 }
 
-export async function logAction(p: { agent: AgentRow; type: "deploy" | "buy" | "sell" | "burn" | "transfer" | "swap"; mint?: string | null; venue?: string | null; amount?: string | null; result: ExecResult; detail?: Record<string, unknown> }) {
+export async function logAction(p: { agent: AgentRow; type: "deploy" | "buy" | "sell" | "burn" | "transfer" | "swap" | "claim"; mint?: string | null; venue?: string | null; amount?: string | null; result: ExecResult; detail?: Record<string, unknown> }) {
   const id = newId("act");
   await run("INSERT INTO actions (id, agent_id, type, mint, venue, amount, signature, status, detail, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)", [
     id,

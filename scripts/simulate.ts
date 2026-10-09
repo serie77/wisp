@@ -14,7 +14,7 @@ import * as ps from "../src/lib/solana/pumpswap";
 import { buildBurnIxs, buildTransferSolIx, getMintInfo, getTokenBalance } from "../src/lib/solana/tokens";
 import { buildTx, simulateTx } from "../src/lib/solana/tx";
 import { detectVenue } from "../src/lib/solana/venue";
-import { buildCreateFeeSharingConfigIx, buildUpdateFeeSharesV2Ix, PUMP_FEES_PROGRAM } from "../src/lib/solana/feeshare";
+import { buildClaimIxs, getCreatorFees } from "../src/lib/solana/creatorfee";
 
 // A large, always-funded mainnet wallet used purely as a simulation payer (never signs).
 const FUNDED = new PublicKey("5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9");
@@ -125,24 +125,6 @@ async function findGraduatedMint(): Promise<string | null> {
     else bad("pump.fun create_v2 holder-rewards coin", `${JSON.stringify(r.err)} :: ${r.logs.filter((l) => /Error|log/.test(l)).slice(-4).join(" | ")}`);
   }
 
-  // ── create_v2 + creator-fee sharing opt-in (treasury takes 10%) in one tx ──
-  {
-    const mintKp = Keypair.generate();
-    const treasury = Keypair.generate().publicKey;
-    const ixs = [
-      pump.buildCreateIx({ mint: mintKp.publicKey, payer: FUNDED, name: "Wisp Share", symbol: "WSHR", uri: "http://localhost:3000/m/bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiymsck7e7aqa4s52zy" }),
-      buildCreateFeeSharingConfigIx({ creator: FUNDED, mint: mintKp.publicKey }),
-      buildUpdateFeeSharesV2Ix({ authority: FUNDED, mint: mintKp.publicKey, currentShareholders: [FUNDED], shareholders: [{ address: FUNDED, shareBps: 9000 }, { address: treasury, shareBps: 1000 }] }),
-    ];
-    const built = await buildTx(conn, { payer: FUNDED, ixs, computeUnits: 400_000, lookupTables: alts });
-    built.tx.sign([mintKp]);
-    const size = built.tx.serialize().length;
-    const r = await simulateTx(conn, built.tx);
-    const logs = r.logs.join("\n");
-    if (!r.err && logs.includes(`${PUMP_FEES_PROGRAM.toBase58()} success`)) ok("pump.fun create_v2 + fee sharing opt-in (90/10 split)", `${size}B, ${r.units_consumed} CU`);
-    else bad("pump.fun create_v2 + fee sharing", `${size}B err=${JSON.stringify(r.err)} :: ${r.logs.filter((l) => /Error|log|failed/.test(l)).slice(-6).join(" | ")}`);
-  }
-
   // ── bonding curve buy / sell ──
   const pumpMint = process.argv[2] ?? (await findPumpMint());
   if (!pumpMint) bad("find live pump mint");
@@ -190,6 +172,22 @@ async function findGraduatedMint(): Promise<string | null> {
           ps.buildSellIxs({ user: holder, pool: v.pool, tokens, minSolOut: (qs * 90n) / 100n, baseTokenProgram: v.mintInfo.tokenProgram }), PUMPSWAP_PROGRAM, 300_000);
       }
     }
+  }
+
+  // ── creator-fee claim (sweep parked fees + collect both vaults) for the live coins' creators ──
+  for (const m of [pumpMint, gradMint].filter((x): x is string => !!x)) {
+    const mint = new PublicKey(m);
+    const v = await detectVenue(conn, mint);
+    const curve = await pump.fetchBondingCurve(conn, mint);
+    if (!curve) continue;
+    const creator = v?.kind === "pumpswap" ? v.pool.coinCreator : curve.creator;
+    const owner = (await conn.getAccountInfo(creator, "confirmed"))?.owner;
+    if (owner && !owner.equals(SYSTEM)) { ok(`claim on ${m.slice(0, 6)}… skipped`, `creator is a PDA of ${owner.toBase58().slice(0, 6)}…`); continue; }
+    const fees = await getCreatorFees(conn, creator, [mint]);
+    if (fees.total === 0n) { ok(`claim on ${m.slice(0, 6)}… skipped`, "nothing waiting"); continue; }
+    const c = fees.coins[0];
+    await sim(`creator-fee claim on ${m.slice(0, 6)}… (${Number(fees.total) / 1e9} SOL: vaults ${Number(fees.curveVault + fees.ammVault) / 1e9}, curve ${Number(c?.on_curve ?? 0n) / 1e9}, pool ${Number(c?.on_pool ?? 0n) / 1e9})`, FUNDED,
+      buildClaimIxs(FUNDED, fees).ixs, v?.kind === "pumpswap" ? PUMPSWAP_PROGRAM : PUMP_PROGRAM, 300_000);
   }
 
   // ── SOL transfer ──

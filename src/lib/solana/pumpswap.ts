@@ -20,6 +20,8 @@ export type PumpSwapPool = {
   isHolderReward: boolean;
   /** Signed; appended Sept 2026. Pools older than the field read as 0. */
   virtualQuoteReserves: bigint;
+  /** Pool.creator_fees: creator fee kept in the quote vault by buy_v2/sell_v2 until sweep_creator_fee. */
+  creatorFeesWaiting: bigint;
   /** Raw pool_base_token_account.amount */
   baseReserve: bigint;
   /** Effective quote reserves = pool_quote_token_account.amount + virtualQuoteReserves (pricing basis) */
@@ -71,6 +73,7 @@ export async function fetchPool(conn: Connection, address: PublicKey): Promise<P
   const d = Buffer.from(info.data);
   // disc(8) bump(1) index(2) creator(32) base_mint(32) quote_mint(32) lp_mint(32) pool_base(32) pool_quote(32) lp_supply(8)
   // coin_creator(32) is_mayhem(1) is_cashback(1) | appended: virtual_quote_reserves(i128) creator_fee_bps(u64) can_edit(bool) is_holder_reward(bool)
+  // protocol_fees(u64)@271 creator_fees(u64)@279
   const virtualQuoteReserves = d.length >= 261 ? readI128LE(d, 245) : 0n;
   const pool: PumpSwapPool = {
     address,
@@ -86,6 +89,7 @@ export async function fetchPool(conn: Connection, address: PublicKey): Promise<P
     isCashback: d[244] === 1,
     isHolderReward: d.length >= 271 ? d[270] === 1 : false,
     virtualQuoteReserves,
+    creatorFeesWaiting: d.length >= 287 ? d.readBigUInt64LE(279) : 0n,
     baseReserve: 0n,
     quoteReserve: 0n,
     rawQuoteReserve: 0n,

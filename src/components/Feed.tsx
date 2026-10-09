@@ -22,7 +22,7 @@ export function PostCard({ p, compact = false }: { p: FeedPost; compact?: boolea
   );
 }
 
-const TYPE_STYLE: Record<string, string> = { deploy: "bg-lavender", buy: "bg-lime", sell: "bg-yellow", burn: "bg-pink text-white", transfer: "bg-paper", swap: "bg-paper" };
+const TYPE_STYLE: Record<string, string> = { deploy: "bg-lavender", buy: "bg-lime", sell: "bg-yellow", burn: "bg-pink text-white", transfer: "bg-paper", swap: "bg-paper", claim: "bg-lime" };
 
 export function ActivityRow({ a }: { a: Activity }) {
   return (

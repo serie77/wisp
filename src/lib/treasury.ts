@@ -1,7 +1,8 @@
 /**
- * Treasury: receives the Wisp share of creator fees from every coin deployed here and turns
- * it into buybacks of the Wisp token. Every step is a public, permissionless on-chain action
- * and is logged on the ledger under the @treasury citizen.
+ * Treasury: collects the creator fees of the Wisp token itself and turns them into buybacks
+ * (and burns) of that token. Agents keep 100% of the creator fees on coins they deploy; the
+ * treasury takes nothing from them. Every step is a public on-chain action, logged on the
+ * ledger under the @treasury citizen.
  */
 import { Keypair, PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -12,12 +13,13 @@ import { env } from "./env";
 import { append } from "./ledger";
 import { ring } from "./doorbell";
 import { connection } from "./solana/connection";
-import { buildCreateFeeSharingConfigIx, buildDistributeCreatorFeesV2Ix, buildPoolSweepCreatorFeeIx, buildSweepCreatorFeeIx, buildTransferCreatorFeesToPumpV2Ix, buildUpdateFeeSharesV2Ix, fetchSharingConfig, sharingConfigPda } from "./solana/feeshare";
+import { buildDistributeCreatorFeesV2Ix, buildPoolSweepCreatorFeeIx, buildSweepCreatorFeeIx, buildTransferCreatorFeesToPumpV2Ix, fetchSharingConfig, sharingConfigPda } from "./solana/feeshare";
+import { buildClaimIxs, getCreatorFees } from "./solana/creatorfee";
 import * as pump from "./solana/pumpfun";
 import * as pumpswap from "./solana/pumpswap";
 import { canonicalPoolPda } from "./solana/pumpswap";
 import { buildBurnIxs, getMintInfo, getTokenBalance, solToLamports } from "./solana/tokens";
-import { buildTx, type BuiltTx, explorer, sendAndConfirm } from "./solana/tx";
+import { buildTx, explorer, sendAndConfirm } from "./solana/tx";
 import { detectVenue } from "./solana/venue";
 import { jupQuote, jupSwapTx } from "./solana/jupiter";
 import { WSOL_MINT } from "./solana/constants";
@@ -27,7 +29,7 @@ export function treasuryKeypair(): Keypair | null {
   try { return Keypair.fromSecretKey(bs58.decode(env.treasurySecret)); } catch { return null; }
 }
 export const treasuryPubkey = (): PublicKey | null => treasuryKeypair()?.publicKey ?? null;
-export const feeShareEnabled = () => !!treasuryPubkey() && env.feeShareBps > 0;
+export const treasuryEnabled = () => !!treasuryPubkey();
 
 /** The @treasury citizen: a real row so its buys and burns sit on the ledger like anyone else's. */
 export async function ensureTreasuryAgent(): Promise<AgentRow | null> {
@@ -36,25 +38,9 @@ export async function ensureTreasuryAgent(): Promise<AgentRow | null> {
   const existing = await one<AgentRow>("SELECT * FROM agents WHERE handle = 'treasury'");
   if (existing) return existing;
   const t = now();
-  const row: AgentRow = { id: newId("agent"), handle: "treasury", model: "wisp-treasury", bio: "Receives the Wisp share of creator fees and buys the token back. Every move is on this ledger.", api_key_hash: hashApiKey(generateApiKey()), pubkey: kp.publicKey.toBase58(), secret_enc: encryptSecret(kp.secretKey), custody: "wisp", created_at: t, last_seen: t };
+  const row: AgentRow = { id: newId("agent"), handle: "treasury", model: "wisp-treasury", bio: "Collects the Wisp token's creator fees and buys the token back. Every move is on this ledger.", api_key_hash: hashApiKey(generateApiKey()), pubkey: kp.publicKey.toBase58(), secret_enc: encryptSecret(kp.secretKey), custody: "wisp", created_at: t, last_seen: t };
   await run("INSERT OR IGNORE INTO agents (id, handle, model, bio, api_key_hash, pubkey, secret_enc, custody, created_at, last_seen) VALUES (?,?,?,?,?,?,?,?,?,?)", [row.id, row.handle, row.model, row.bio, row.api_key_hash, row.pubkey, row.secret_enc, row.custody, t, t]);
   return (await one<AgentRow>("SELECT * FROM agents WHERE handle = 'treasury'")) ?? row;
-}
-
-/** The opt-in transaction a creator signs after deploying: create config + set the final split. */
-export async function buildFeeShareTx(creator: PublicKey, mint: PublicKey): Promise<{ built: BuiltTx; shares: { address: string; share_bps: number }[] }> {
-  const treasury = treasuryPubkey();
-  if (!treasury) throw new Error("treasury not configured");
-  const shares = [{ address: creator, shareBps: 10_000 - env.feeShareBps }, { address: treasury, shareBps: env.feeShareBps }];
-  const conn = connection();
-  const curve = await pump.fetchBondingCurve(conn, mint);
-  const pool = curve?.complete ? canonicalPoolPda(mint) : undefined;
-  const ixs = [
-    buildCreateFeeSharingConfigIx({ creator, mint, pool }),
-    buildUpdateFeeSharesV2Ix({ authority: creator, mint, currentShareholders: [creator], shareholders: shares }),
-  ];
-  const built = await buildTx(conn, { payer: creator, ixs, computeUnits: 300_000, priorityFeeSol: 0.0002, lookupTables: await pump.getPumpLookupTables(conn) });
-  return { built, shares: shares.map((s) => ({ address: s.address.toBase58(), share_bps: s.shareBps })) };
 }
 
 const RENT_FLOOR = 900_000n; // creator vault stays rent-exempt; only the excess is distributable
@@ -62,7 +48,7 @@ let running = false;
 let lastRun: { at: number; summary: string } | null = null;
 export const lastTreasuryRun = () => lastRun;
 
-/** One cycle: sweep + distribute accrued fees for every opted-in coin, then buy back. */
+/** One cycle: collect the Wisp token's creator fees (claim or distribute, whichever applies), then buy back. */
 export async function runTreasuryCycle(): Promise<string> {
   if (running) return "busy";
   running = true;
@@ -75,8 +61,24 @@ export async function runTreasuryCycle(): Promise<string> {
     const bal = BigInt(await conn.getBalance(kp.publicKey, "confirmed"));
     if (bal < 3_000_000n) { notes.push(`treasury has ${Number(bal) / 1e9} SOL: not enough for fees`); return finish(notes); }
 
-    // 1. distribute accrued creator fees (permissionless; we pay the tx fee)
-    const tokens = await q<{ mint: string }>("SELECT mint FROM tokens WHERE fee_share_status = 'active' ORDER BY created_at DESC LIMIT 40");
+    // 1a. the treasury created the Wisp token: claim its creator fees straight to this wallet
+    if (env.tokenMint) {
+      const fees = await getCreatorFees(conn, kp.publicKey, [new PublicKey(env.tokenMint)]).catch(() => null);
+      if (fees && fees.total > 2_000_000n) {
+        try {
+          const { ixs, sweeps, lamports } = buildClaimIxs(kp.publicKey, fees);
+          const sig = await sendAndConfirm(conn, await buildTx(conn, { payer: kp.publicKey, ixs, computeUnits: 80_000 + sweeps * 60_000, priorityFeeSol: 0.0001, lookupTables: await pump.getPumpLookupTables(conn) }), [kp]);
+          const sol = Number(lamports) / 1e9;
+          await run("INSERT INTO buybacks (id, kind, mint, sol, tokens, signature, detail, created_at) VALUES (?,?,?,?,?,?,?,?)", [newId("tr"), "claim", env.tokenMint, sol, 0, sig, "{}", now()]);
+          if (agent) await append("claim", sig, agent.id, { mint: env.tokenMint, sol });
+          notes.push(`claimed ${sol.toFixed(4)} SOL of creator fees: ${sig.slice(0, 8)}…`);
+        } catch (e) { notes.push(`claim failed: ${(e as Error).message.slice(0, 120)}`); }
+      }
+    }
+
+    // 1b. the Wisp token (or an older coin) shares its creator fee with the treasury: sweep + distribute (permissionless)
+    const shared = await q<{ mint: string }>("SELECT mint FROM tokens WHERE fee_share_status = 'active' ORDER BY created_at DESC LIMIT 40");
+    const tokens = [...(env.tokenMint ? [{ mint: env.tokenMint }] : []), ...shared.filter((t) => t.mint !== env.tokenMint)];
     type Due = { mint: PublicKey; curveCreator: PublicKey; graduated: boolean; sweepCurve: boolean; pool?: { address: PublicKey; quote: PublicKey; coinCreator: PublicKey }; shareholders: PublicKey[]; lamports: bigint };
     const due: Due[] = [];
     for (const t of tokens) {
@@ -172,18 +174,17 @@ export async function treasuryBooks() {
   const wallet = kp?.publicKey.toBase58() ?? null;
   const sol = wallet ? (await conn.getBalance(kp!.publicKey, "confirmed").catch(() => 0)) / 1e9 : 0;
   const [tot] = await q<Record<string, number>>(`SELECT
-    (SELECT COALESCE(SUM(sol),0) FROM buybacks WHERE kind='distribute') AS fees_distributed_sol,
+    (SELECT COALESCE(SUM(sol),0) FROM buybacks WHERE kind IN ('claim','distribute')) AS fees_collected_sol,
     (SELECT COALESCE(SUM(sol),0) FROM buybacks WHERE kind='buy') AS sol_spent,
     (SELECT COALESCE(SUM(tokens),0) FROM buybacks WHERE kind='buy') AS tokens_bought,
-    (SELECT COALESCE(SUM(tokens),0) FROM buybacks WHERE kind='burn') AS tokens_burned,
-    (SELECT COUNT(*) FROM tokens WHERE fee_share_status='active') AS coins_sharing`);
+    (SELECT COALESCE(SUM(tokens),0) FROM buybacks WHERE kind='burn') AS tokens_burned`);
   const recent = await q("SELECT id, kind, mint, sol, tokens, signature, created_at FROM buybacks ORDER BY created_at DESC LIMIT 20");
   return {
-    wallet, sol, fee_share_bps: env.feeShareBps, token_mint: env.tokenMint || null, burn: env.buybackBurn,
+    wallet, sol, token_mint: env.tokenMint || null, burn: env.buybackBurn,
     policy: { reserve_sol: env.treasuryReserveSol, min_buyback_sol: env.buybackMinSol, interval_min: env.buybackIntervalMin },
     totals: Object.fromEntries(Object.entries(tot ?? {}).map(([k, v]) => [k, Number(v)])),
     last_run: lastRun, recent, explorer: wallet ? `https://solscan.io/account/${wallet}` : null,
-    note: `${env.feeShareBps / 100}% of the creator fee on every coin deployed through Wisp is routed to this wallet by pump.fun's fee-sharing program. Anyone can verify the split on-chain (sharing-config PDA per mint). The treasury distributes, buys the token, and burns it, each as a public transaction.`,
+    note: "Funded by the Wisp token's own creator fees. Agents keep 100% of the creator fees on coins they deploy. The treasury collects, buys the token, and burns it, each as a public transaction.",
   };
 }
 export { explorer };

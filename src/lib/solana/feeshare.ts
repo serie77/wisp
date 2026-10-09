@@ -1,7 +1,7 @@
 /**
- * Pump.fun creator-fee sharing (Pump Fees program). A coin deployed through Wisp opts into
- * shared distribution: the creator keeps most of the creator fee, the Wisp treasury takes a
- * slice, and anyone can sweep + distribute accrued fees permissionlessly.
+ * Pump.fun creator-fee sharing (Pump Fees program): sweep + distribute for coins whose creator
+ * fee is split by a sharing config. The treasury uses this when the Wisp token shares its fees
+ * with the treasury wallet. Agents' own coins don't share; see creatorfee.ts for their claims.
  * Layouts from pump-public-docs/docs/instructions/CREATOR_FEE_SHARING.md.
  */
 import { type Connection, PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
@@ -15,8 +15,6 @@ export const FEES_EVENT_AUTHORITY = PublicKey.findProgramAddressSync([Buffer.fro
 export const sharingConfigPda = (mint: PublicKey) => PublicKey.findProgramAddressSync([Buffer.from("sharing-config"), mint.toBuffer()], PUMP_FEES_PROGRAM)[0];
 
 const DISC = {
-  createFeeSharingConfig: Buffer.from([195, 78, 86, 76, 111, 52, 251, 213]),
-  updateFeeSharesV2: Buffer.from([111, 251, 49, 6, 78, 78, 106, 18]),
   transferCreatorFeesToPumpV2: Buffer.from([1, 33, 78, 185, 33, 67, 44, 92]),
   distributeCreatorFeesV2: Buffer.from([255, 203, 19, 79, 244, 68, 8, 159]),
   sweepCreatorFee: Buffer.from([32, 246, 191, 52, 8, 201, 73, 186]),
@@ -75,61 +73,6 @@ export function buildPoolSweepCreatorFeeIx(p: { payer: PublicKey; pool: PublicKe
 }
 
 export type Shareholder = { address: PublicKey; shareBps: number };
-
-/** Opt a coin into shared distribution. Payer must be the coin creator. `pool` only for graduated coins. */
-export function buildCreateFeeSharingConfigIx(p: { creator: PublicKey; mint: PublicKey; pool?: PublicKey }): TransactionInstruction {
-  const keys = [
-    { pubkey: FEES_EVENT_AUTHORITY, isSigner: false, isWritable: false },
-    { pubkey: PUMP_FEES_PROGRAM, isSigner: false, isWritable: false },
-    { pubkey: p.creator, isSigner: true, isWritable: true },
-    { pubkey: PUMP_GLOBAL, isSigner: false, isWritable: false },
-    { pubkey: p.mint, isSigner: false, isWritable: false },
-    { pubkey: sharingConfigPda(p.mint), isSigner: false, isWritable: true },
-    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    { pubkey: bondingCurvePda(p.mint), isSigner: false, isWritable: true },
-    { pubkey: PUMP_PROGRAM, isSigner: false, isWritable: false },
-    { pubkey: PUMP_EVENT_AUTHORITY_PDA, isSigner: false, isWritable: false },
-  ];
-  // Anchor optional accounts: when the coin has not graduated, pass the program id as the placeholder.
-  if (p.pool) keys.push({ pubkey: p.pool, isSigner: false, isWritable: true }, { pubkey: PUMPSWAP_PROGRAM, isSigner: false, isWritable: false }, { pubkey: PUMPSWAP_EVENT_AUTHORITY, isSigner: false, isWritable: false });
-  else keys.push({ pubkey: PUMP_FEES_PROGRAM, isSigner: false, isWritable: false }, { pubkey: PUMPSWAP_PROGRAM, isSigner: false, isWritable: false }, { pubkey: PUMP_FEES_PROGRAM, isSigner: false, isWritable: false });
-  return new TransactionInstruction({ programId: PUMP_FEES_PROGRAM, keys, data: DISC.createFeeSharingConfig });
-}
-
-/** Set the final shareholder list (once). Authority = current creator. SOL-quoted coins only. */
-export function buildUpdateFeeSharesV2Ix(p: { authority: PublicKey; mint: PublicKey; currentShareholders: PublicKey[]; shareholders: Shareholder[] }): TransactionInstruction {
-  const total = p.shareholders.reduce((s, x) => s + x.shareBps, 0);
-  if (total !== 10_000 || p.shareholders.length === 0 || p.shareholders.length > 10) throw new Error("shareholders must sum to 10000 bps (1–10 entries)");
-  const cfg = sharingConfigPda(p.mint);
-  const pumpCreatorVault = creatorVaultPda(cfg);
-  const ammVaultAuthority = coinCreatorVaultPda(cfg);
-  const body = Buffer.alloc(4 + p.shareholders.length * 34);
-  body.writeUInt32LE(p.shareholders.length, 0);
-  p.shareholders.forEach((s, i) => { s.address.toBuffer().copy(body, 4 + i * 34); body.writeUInt16LE(s.shareBps, 4 + i * 34 + 32); });
-  const keys = [
-    { pubkey: FEES_EVENT_AUTHORITY, isSigner: false, isWritable: false },
-    { pubkey: PUMP_FEES_PROGRAM, isSigner: false, isWritable: false },
-    { pubkey: p.authority, isSigner: true, isWritable: true },
-    { pubkey: PUMP_GLOBAL, isSigner: false, isWritable: false },
-    { pubkey: p.mint, isSigner: false, isWritable: false },
-    { pubkey: cfg, isSigner: false, isWritable: true },
-    { pubkey: bondingCurvePda(p.mint), isSigner: false, isWritable: false },
-    { pubkey: pumpCreatorVault, isSigner: false, isWritable: true },
-    { pubkey: getAssociatedTokenAddressSync(WSOL_MINT, pumpCreatorVault, true, TOKEN_PROGRAM_ID), isSigner: false, isWritable: true },
-    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    { pubkey: PUMP_PROGRAM, isSigner: false, isWritable: false },
-    { pubkey: PUMP_EVENT_AUTHORITY_PDA, isSigner: false, isWritable: false },
-    { pubkey: PUMPSWAP_PROGRAM, isSigner: false, isWritable: false },
-    { pubkey: PUMPSWAP_EVENT_AUTHORITY, isSigner: false, isWritable: false },
-    { pubkey: WSOL_MINT, isSigner: false, isWritable: false },
-    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-    { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-    { pubkey: ammVaultAuthority, isSigner: false, isWritable: true },
-    { pubkey: getAssociatedTokenAddressSync(WSOL_MINT, ammVaultAuthority, true, TOKEN_PROGRAM_ID), isSigner: false, isWritable: true },
-    ...p.currentShareholders.map((s) => ({ pubkey: s, isSigner: false, isWritable: true })),
-  ];
-  return new TransactionInstruction({ programId: PUMP_FEES_PROGRAM, keys, data: Buffer.concat([DISC.updateFeeSharesV2, body]) });
-}
 
 /** Permissionless: move AMM-side creator fees (graduated coins) into the pump creator vault. */
 export function buildTransferCreatorFeesToPumpV2Ix(p: { payer: PublicKey; mint: PublicKey }): TransactionInstruction {
