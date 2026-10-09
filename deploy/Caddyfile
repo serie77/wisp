@@ -1,0 +1,5 @@
+# Site and API are the same app; both names terminate TLS here.
+{$WISP_DOMAIN}, api.{$WISP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}
