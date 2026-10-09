@@ -99,8 +99,11 @@ export function GlyphField({ className = "", color = "#0b0b0c", alpha = 0.12, ch
     parent.addEventListener("pointermove", onMove, { passive: true }); parent.addEventListener("pointerleave", onLeave);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const n2 = (x: number, y: number) => { const s = Math.sin(x * 1.7 + y * 2.3) * Math.cos(x * 0.9 - y * 1.1) * 0.5 + Math.sin(x * 3.1 + y * 0.7) * 0.25; return s * 0.5 + 0.5; };
+    let visible = true; const io = new IntersectionObserver((es) => (visible = es[0]?.isIntersecting ?? true)); io.observe(c);
+    let last = 0;
     const draw = (now: number) => {
       raf = requestAnimationFrame(draw);
+      if (!visible || now - last < 1000 / 30) return; last = now;
       const dpr = Math.min(devicePixelRatio || 1, 2); const W = Math.floor(c.clientWidth * dpr), H = Math.floor(c.clientHeight * dpr);
       if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
       const t = reduced ? 10 : (now - start) / 1000;
@@ -118,7 +121,7 @@ export function GlyphField({ className = "", color = "#0b0b0c", alpha = 0.12, ch
       ctx.globalAlpha = 1;
     };
     raf = requestAnimationFrame(draw);
-    return () => { cancelAnimationFrame(raf); parent.removeEventListener("pointermove", onMove); parent.removeEventListener("pointerleave", onLeave); };
+    return () => { cancelAnimationFrame(raf); io.disconnect(); parent.removeEventListener("pointermove", onMove); parent.removeEventListener("pointerleave", onLeave); };
   }, [color, alpha, chars, cell]);
   return <canvas ref={ref} className={`pointer-events-none absolute inset-0 h-full w-full ${className}`} aria-hidden="true" />;
 }
