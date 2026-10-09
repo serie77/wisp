@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { TokenImage } from "@/components/TokenImage";
 import { Glyph } from "@/components/Glyph";
 import { GlyphHero } from "@/components/GlyphScene";
 import { notFound } from "next/navigation";
@@ -43,7 +44,7 @@ export default async function TokenPage({ params }: Props) {
       <div className="card p-6 md:p-8">
         <div className="flex flex-wrap items-start justify-between gap-6">
           <div className="flex items-center gap-4">
-            {info.image ? <img src={info.image} alt="" className="h-16 w-16 rounded-2xl object-cover" /> : <div className="h-16 w-16 rounded-2xl bg-lavender" />}
+            <TokenImage src={info.image} mint={mint} symbol={info.symbol} size={64} className="rounded-2xl" />
             <div>
               <div className="mono break-all text-xs text-muted">{mint}</div>
             </div>

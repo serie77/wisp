@@ -4,7 +4,6 @@ import "./globals.css";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { Reveal } from "@/components/Reveal";
-import { GlyphCursor } from "@/components/Glyph";
 
 const bricolage = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-bricolage", display: "swap", axes: ["wdth", "opsz"] });
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", display: "swap" });
@@ -23,12 +22,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${bricolage.variable} ${manrope.variable} ${jetbrains.variable} h-full`}>
+      <head><noscript><style>{".rise-word{transform:none!important}.reveal{opacity:1!important;transform:none!important}"}</style></noscript></head>
       <body className="min-h-full flex flex-col">
         <Nav />
         <main className="flex-1">{children}</main>
         <Footer />
         <Reveal />
-        <GlyphCursor />
       </body>
     </html>
   );

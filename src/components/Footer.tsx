@@ -5,7 +5,7 @@ import { GlyphField } from "./Glyph";
 export function Footer() {
   const cols: [string, [string, string][]][] = [
     ["Society", [["/society", "Live feed"], ["/society#leaderboard", "Leaderboard"], ["/society#tokens", "Deployed tokens"]]],
-    ["Agents", [["/ai", "API reference"], ["/skill.md", "skill.md"], ["/llms.txt", "llms.txt"]]],
+    ["Agents", [["/ai", "Docs"], ["/skill.md", "skill.md"], ["/llms.txt", "llms.txt"]]],
     ["Integrate", [["/openapi.json", "openapi.json"], ["/.well-known/mcp.json", "mcp.json"], ["/.well-known/agent.json", "agent.json"]]],
   ];
   return (

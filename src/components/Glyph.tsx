@@ -1,76 +1,24 @@
 "use client";
 import { useEffect, useRef, type ElementType } from "react";
 
-const GLYPHS = "▮▯░▒▓█#%&@/\\|·:;=+*<>[]{}()◆◇○●△▽ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
 /**
- * Kinetic glyph text. On reveal, every character cycles through a glyph set and resolves
- * left to right (decode). On hover, letters narrow and lighten toward the cursor (elastic)
- * and re-scramble briefly. Works on any heading or label; keeps the real text for a11y.
+ * Heading reveal: each word rises once out of a mask when the heading scrolls into view.
+ * No character scrambling. Keeps the real text for a11y.
  */
-export function Glyph({
-  text, as: Tag = "span", className = "", elastic = true, scramble = true, delay = 0, speed = 1, once = true,
-}: { text: string; as?: ElementType; className?: string; elastic?: boolean; scramble?: boolean; delay?: number; speed?: number; once?: boolean }) {
+export function Glyph({ text, as: Tag = "span", className = "", delay = 0 }: { text: string; as?: ElementType; className?: string; delay?: number }) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     const el = ref.current; if (!el) return;
-    const spans = Array.from(el.querySelectorAll<HTMLSpanElement>("span[data-g]"));
-    const finals = spans.map((s) => s.dataset.g ?? "");
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let raf = 0, mx = -9999, my = -9999, played = false;
-
-    const decode = (startDelay = delay) => {
-      if (reduced || !scramble) { spans.forEach((s, i) => (s.textContent = finals[i])); return; }
-      const t0 = performance.now() + startDelay;
-      const per = 38 / speed; // ms per char resolve
-      const step = (now: number) => {
-        const t = now - t0;
-        let done = true;
-        spans.forEach((s, i) => {
-          const resolveAt = i * per + 220 / speed;
-          if (t < 0) { s.textContent = finals[i]; done = false; return; }
-          if (t < resolveAt) { done = false; if (Math.random() < 0.5) s.textContent = GLYPHS[Math.floor(Math.random() * GLYPHS.length)]; }
-          else s.textContent = finals[i];
-        });
-        if (!done) raf = requestAnimationFrame(step);
-      };
-      raf = requestAnimationFrame(step);
-    };
-
-    const io = new IntersectionObserver((es) => {
-      if (es[0]?.isIntersecting && (!played || !once)) { played = true; decode(); if (once) io.disconnect(); }
-    }, { threshold: 0.2 });
+    const io = new IntersectionObserver(([e]) => { if (e?.isIntersecting) { el.classList.add("rise-in"); io.disconnect(); } }, { threshold: 0.15 });
     io.observe(el);
-
-    let eraf = 0;
-    const onMove = (e: PointerEvent) => { mx = e.clientX; my = e.clientY; };
-    const onLeave = () => { mx = -9999; };
-    const tick = () => {
-      eraf = requestAnimationFrame(tick);
-      if (!elastic) return;
-      for (const s of spans) {
-        const r = s.getBoundingClientRect();
-        const d = Math.hypot(mx - (r.left + r.width / 2), my - (r.top + r.height / 2));
-        const k = Math.max(0, 1 - d / 220);
-        const cur = Number(s.dataset.k ?? 0), next = cur + (k - cur) * 0.2;
-        if (Math.abs(next - cur) < 0.001 && next < 0.001) continue;
-        s.dataset.k = String(next);
-        s.style.fontVariationSettings = `"wdth" ${100 - next * 36}, "opsz" 96`;
-        s.style.fontWeight = String(800 - Math.round(next * 480));
-        s.style.transform = `translateY(${-next * 5}px)`;
-      }
-    };
-    if (elastic && !reduced) { window.addEventListener("pointermove", onMove, { passive: true }); eraf = requestAnimationFrame(tick); }
-    el.addEventListener("pointerleave", onLeave);
-    return () => { cancelAnimationFrame(raf); cancelAnimationFrame(eraf); io.disconnect(); window.removeEventListener("pointermove", onMove); el.removeEventListener("pointerleave", onLeave); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text]);
+    return () => io.disconnect();
+  }, []);
   const words = text.split(" ");
   return (
-    <Tag ref={ref} className={className} aria-label={text}>
+    <Tag ref={ref} className={`rise ${className}`} aria-label={text}>
       {words.map((w, wi) => (
         <span key={wi} aria-hidden>
-          <span className="inline-block whitespace-nowrap">{w.split("").map((ch, i) => <span key={i} data-g={ch} className="inline-block will-change-transform">{ch}</span>)}</span>
+          <span className="rise-mask"><span className="rise-word" style={{ transitionDelay: `${delay + wi * 55}ms` }}>{w}</span></span>
           {wi < words.length - 1 ? " " : ""}
         </span>
       ))}
@@ -78,7 +26,7 @@ export function Glyph({
   );
 }
 
-/** Multi-line kinetic heading: each line decodes in sequence. */
+/** Multi-line heading: each line rises in sequence. */
 export function GlyphLines({ lines, className = "", lineClass = "", as: Tag = "h1" }: { lines: string[]; className?: string; lineClass?: string; as?: ElementType }) {
   return (
     <Tag className={className}>
@@ -186,36 +134,6 @@ export function GlyphArt({ preset = "noise", chars = DENSE, color = "#0b0b0c", b
     return () => { cancelAnimationFrame(raf); io.disconnect(); host.removeEventListener("pointermove", onMove); host.removeEventListener("pointerleave", onLeave); };
   }, [preset, chars, color, bg, cell, speed, alpha]);
   return <canvas ref={ref} className={`h-full w-full ${className}`} aria-hidden="true" />;
-}
-
-/** Cursor trail of decaying glyphs, site-wide. */
-export function GlyphCursor() {
-  useEffect(() => {
-    if (window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const host = document.createElement("div");
-    host.setAttribute("aria-hidden", "true");
-    host.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:60;overflow:hidden;font-family:ui-monospace,Menlo,monospace";
-    document.body.appendChild(host);
-    let last = 0, lx = 0, ly = 0;
-    const G = "·:+*#%@▮◆○△=≡";
-    const onMove = (e: PointerEvent) => {
-      const now = performance.now();
-      if (now - last < 28 || Math.hypot(e.clientX - lx, e.clientY - ly) < 6) return;
-      last = now; lx = e.clientX; ly = e.clientY;
-      const s = document.createElement("span");
-      s.textContent = G[Math.floor(Math.random() * G.length)];
-      const size = 9 + Math.random() * 9;
-      const dark = document.elementFromPoint(e.clientX, e.clientY)?.closest(".ink");
-      s.style.cssText = `position:absolute;left:${e.clientX}px;top:${e.clientY}px;transform:translate(-50%,-50%);font-size:${size}px;color:${dark ? "#b9b3ff" : "#0b0b0c"};opacity:.8;transition:opacity .7s ease,transform .7s ease;will-change:transform,opacity`;
-      host.appendChild(s);
-      requestAnimationFrame(() => { s.style.opacity = "0"; s.style.transform = `translate(-50%,-50%) translate(${(Math.random() - 0.5) * 30}px,${-10 - Math.random() * 24}px) scale(.6)`; });
-      setTimeout(() => s.remove(), 720);
-      while (host.childElementCount > 60) host.firstElementChild?.remove();
-    };
-    window.addEventListener("pointermove", onMove, { passive: true });
-    return () => { window.removeEventListener("pointermove", onMove); host.remove(); };
-  }, []);
-  return null;
 }
 
 /** A thin horizontal strip of streaming glyphs — a section divider. */

@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   serverExternalPackages: ["@libsql/client", "@solana/web3.js"],
   images: { remotePatterns: [{ protocol: "https", hostname: "**" }] },
+  async redirects() {
+    return [{ source: "/docs", destination: "/ai", permanent: false }, { source: "/docs/:path*", destination: "/ai", permanent: false }];
+  },
   async headers() {
     const cors = [
       { key: "Access-Control-Allow-Origin", value: "*" },

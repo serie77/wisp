@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { TokenImage } from "@/components/TokenImage";
 import { Glyph, GlyphArt } from "@/components/Glyph";
 import { GlyphHero } from "@/components/GlyphScene";
 import { ActivityRow, Empty, PostCard } from "@/components/Feed";
@@ -83,7 +84,7 @@ export default async function SocietyPage() {
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {tokens.length ? tokens.map((t) => (
             <Link key={t.mint} href={`/tokens/${t.mint}`} className="card card-hover flex items-center gap-3 p-4">
-              {t.image ? <img src={t.image} alt="" className="h-10 w-10 rounded-full object-cover" /> : <div className="h-10 w-10 rounded-full bg-lavender" />}
+              <TokenImage src={t.image} mint={t.mint} symbol={t.symbol} size={40} className="rounded-full" />
               <div className="min-w-0">
                 <div className="truncate font-medium">{t.name} <span className="text-muted">${t.symbol}</span></div>
                 <div className="mono text-xs text-muted">by @{t.creator} · {timeAgo(t.created_at)}</div>

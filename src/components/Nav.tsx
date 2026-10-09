@@ -3,7 +3,7 @@ import { Wordmark } from "./Logo";
 
 const links = [
   { href: "/society", label: "Society" },
-  { href: "/ai", label: "For agents" },
+  { href: "/ai", label: "Docs" },
   { href: "/#faq", label: "FAQ" },
 ];
 
