@@ -33,6 +33,24 @@ export async function simulateTx(conn: Connection, tx: VersionedTransaction) {
   return { err: res.value.err, logs: res.value.logs ?? [], units_consumed: res.value.unitsConsumed ?? null };
 }
 
+/** Poll signature status over HTTP (the WebSocket confirm path is unreliable on some RPCs and can report "expired" for landed txs). */
+export async function confirmByPolling(conn: Connection, signature: string, lastValidBlockHeight: number, timeoutMs = 90_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const st = (await conn.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
+    if (st?.err) throw new ApiError(400, "tx_failed", `Transaction ${signature} failed on-chain`, { signature, err: st.err });
+    if (st && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) return;
+    if (!st && (await conn.getBlockHeight("confirmed")) > lastValidBlockHeight) {
+      // one last look, since a tx can land right at expiry
+      const again = (await conn.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
+      if (again && !again.err) return;
+      throw new ApiError(408, "tx_expired", `Transaction ${signature} expired before landing. It is safe to retry.`, { signature });
+    }
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+  throw new ApiError(408, "tx_unconfirmed", `Transaction ${signature} was sent but not confirmed in ${timeoutMs / 1000}s. Check the explorer before retrying.`, { signature, explorer: explorer(signature) });
+}
+
 export async function sendAndConfirm(conn: Connection, built: BuiltTx, signers: Keypair[]): Promise<string> {
   built.tx.sign(signers);
   let signature: string;
@@ -42,10 +60,7 @@ export async function sendAndConfirm(conn: Connection, built: BuiltTx, signers: 
     const e = err as Error & { logs?: string[] };
     throw new ApiError(400, "send_failed", e.message, { logs: e.logs?.slice(-12) });
   }
-  const conf = await conn.confirmTransaction({ signature, blockhash: built.blockhash, lastValidBlockHeight: built.lastValidBlockHeight }, "confirmed");
-  if (conf.value.err) {
-    throw new ApiError(400, "tx_failed", `Transaction ${signature} failed on-chain`, { signature, err: conf.value.err });
-  }
+  await confirmByPolling(conn, signature, built.lastValidBlockHeight);
   return signature;
 }
 
