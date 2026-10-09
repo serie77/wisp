@@ -6,7 +6,7 @@
  */
 import { type Connection, PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { ASSOCIATED_TOKEN_PROGRAM_ID, PUMP_EVENT_AUTHORITY_PDA, PUMP_GLOBAL, PUMP_PROGRAM, PUMPSWAP_EVENT_AUTHORITY, PUMPSWAP_PROGRAM, TOKEN_PROGRAM_ID, WSOL_MINT } from "./constants";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, PUMP_EVENT_AUTHORITY_PDA, PUMP_GLOBAL, PUMP_PROGRAM, PUMPSWAP_EVENT_AUTHORITY, PUMPSWAP_GLOBAL_CONFIG, PUMPSWAP_PROGRAM, TOKEN_PROGRAM_ID, WSOL_MINT } from "./constants";
 import { bondingCurvePda, creatorVaultPda } from "./pumpfun";
 import { coinCreatorVaultPda } from "./pumpswap";
 
@@ -19,7 +19,60 @@ const DISC = {
   updateFeeSharesV2: Buffer.from([111, 251, 49, 6, 78, 78, 106, 18]),
   transferCreatorFeesToPumpV2: Buffer.from([1, 33, 78, 185, 33, 67, 44, 92]),
   distributeCreatorFeesV2: Buffer.from([255, 203, 19, 79, 244, 68, 8, 159]),
+  sweepCreatorFee: Buffer.from([32, 246, 191, 52, 8, 201, 73, 186]),
 };
+
+/**
+ * Pump `sweep_creator_fee`: v2/v3 trades park the creator fee on the bonding curve; this pays it into the
+ * creator vault of bonding_curve.creator (the sharing-config PDA for fee-shared coins). Permissionless.
+ * It must come BEFORE distribute_creator_fees_v2 in the same transaction.
+ */
+export function buildSweepCreatorFeeIx(p: { payer: PublicKey; mint: PublicKey; creator: PublicKey }): TransactionInstruction {
+  const curve = bondingCurvePda(p.mint);
+  const recipient = creatorVaultPda(p.creator);
+  return new TransactionInstruction({
+    programId: PUMP_PROGRAM,
+    data: DISC.sweepCreatorFee,
+    keys: [
+      { pubkey: p.payer, isSigner: true, isWritable: true },
+      { pubkey: PUMP_GLOBAL, isSigner: false, isWritable: false },
+      { pubkey: p.mint, isSigner: false, isWritable: false },
+      { pubkey: WSOL_MINT, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: curve, isSigner: false, isWritable: true },
+      { pubkey: getAssociatedTokenAddressSync(WSOL_MINT, curve, true, TOKEN_PROGRAM_ID), isSigner: false, isWritable: true },
+      { pubkey: recipient, isSigner: false, isWritable: true },
+      { pubkey: getAssociatedTokenAddressSync(WSOL_MINT, recipient, true, TOKEN_PROGRAM_ID), isSigner: false, isWritable: true },
+      { pubkey: PUMP_EVENT_AUTHORITY_PDA, isSigner: false, isWritable: false },
+      { pubkey: PUMP_PROGRAM, isSigner: false, isWritable: false },
+    ],
+  });
+}
+
+/** PumpSwap `sweep_creator_fee` for graduated coins: pays Pool.creator_fees into the coin-creator vault. Before transfer_creator_fees_to_pump_v2. */
+export function buildPoolSweepCreatorFeeIx(p: { payer: PublicKey; pool: PublicKey; poolQuoteTokenAccount: PublicKey; coinCreator: PublicKey }): TransactionInstruction {
+  const recipient = coinCreatorVaultPda(p.coinCreator);
+  return new TransactionInstruction({
+    programId: PUMPSWAP_PROGRAM,
+    data: DISC.sweepCreatorFee,
+    keys: [
+      { pubkey: p.payer, isSigner: true, isWritable: true },
+      { pubkey: PUMPSWAP_GLOBAL_CONFIG, isSigner: false, isWritable: false },
+      { pubkey: p.pool, isSigner: false, isWritable: true },
+      { pubkey: WSOL_MINT, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: p.poolQuoteTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: recipient, isSigner: false, isWritable: false },
+      { pubkey: getAssociatedTokenAddressSync(WSOL_MINT, recipient, true, TOKEN_PROGRAM_ID), isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: PUMPSWAP_EVENT_AUTHORITY, isSigner: false, isWritable: false },
+      { pubkey: PUMPSWAP_PROGRAM, isSigner: false, isWritable: false },
+    ],
+  });
+}
 
 export type Shareholder = { address: PublicKey; shareBps: number };
 

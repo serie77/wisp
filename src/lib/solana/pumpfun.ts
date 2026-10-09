@@ -22,6 +22,8 @@ export type BondingCurve = {
   isMayhem: boolean;
   isCashback: boolean;
   quoteMint: PublicKey | null;
+  /** Creator fee parked on the curve by v2/v3 trades, waiting for sweep_creator_fee (lamports). */
+  creatorFeeWaiting: bigint;
 };
 
 export const bondingCurvePda = (mint: PublicKey) => PublicKey.findProgramAddressSync([Buffer.from("bonding-curve"), mint.toBuffer()], PUMP_PROGRAM)[0];
@@ -47,6 +49,7 @@ export function decodeBondingCurve(address: PublicKey, data: Buffer): BondingCur
     isMayhem: data.length > 81 ? data[81] === 1 : false,
     isCashback: data.length > 82 ? data[82] === 1 : false,
     quoteMint: data.length >= 115 ? new PublicKey(data.subarray(83, 115)) : null,
+    creatorFeeWaiting: data.length >= 133 ? data.readBigUInt64LE(125) : 0n,
   };
 }
 

@@ -12,7 +12,7 @@ import { env } from "./env";
 import { append } from "./ledger";
 import { ring } from "./doorbell";
 import { connection } from "./solana/connection";
-import { buildCreateFeeSharingConfigIx, buildDistributeCreatorFeesV2Ix, buildTransferCreatorFeesToPumpV2Ix, buildUpdateFeeSharesV2Ix, fetchSharingConfig, sharingConfigPda } from "./solana/feeshare";
+import { buildCreateFeeSharingConfigIx, buildDistributeCreatorFeesV2Ix, buildPoolSweepCreatorFeeIx, buildSweepCreatorFeeIx, buildTransferCreatorFeesToPumpV2Ix, buildUpdateFeeSharesV2Ix, fetchSharingConfig, sharingConfigPda } from "./solana/feeshare";
 import * as pump from "./solana/pumpfun";
 import * as pumpswap from "./solana/pumpswap";
 import { canonicalPoolPda } from "./solana/pumpswap";
@@ -77,28 +77,41 @@ export async function runTreasuryCycle(): Promise<string> {
 
     // 1. distribute accrued creator fees (permissionless; we pay the tx fee)
     const tokens = await q<{ mint: string }>("SELECT mint FROM tokens WHERE fee_share_status = 'active' ORDER BY created_at DESC LIMIT 40");
-    const due: { mint: PublicKey; graduated: boolean; shareholders: PublicKey[]; lamports: bigint }[] = [];
+    type Due = { mint: PublicKey; curveCreator: PublicKey; graduated: boolean; sweepCurve: boolean; pool?: { address: PublicKey; quote: PublicKey; coinCreator: PublicKey }; shareholders: PublicKey[]; lamports: bigint };
+    const due: Due[] = [];
     for (const t of tokens) {
       const mint = new PublicKey(t.mint);
       const cfg = await fetchSharingConfig(conn, mint).catch(() => null);
       if (!cfg) continue;
       const vault = pump.creatorVaultPda(sharingConfigPda(mint));
       const curve = await pump.fetchBondingCurve(conn, mint).catch(() => null);
-      const graduated = !!curve?.complete;
-      let pending = BigInt(await conn.getBalance(vault, "confirmed").catch(() => 0));
+      if (!curve) continue;
+      const graduated = curve.complete;
+      // Newer trade instructions (buy_v3/sell_v3, bots) park the creator fee on the curve until swept.
+      let pending = BigInt(await conn.getBalance(vault, "confirmed").catch(() => 0)) + curve.creatorFeeWaiting;
+      let pool: Due["pool"];
       if (graduated) {
-        const ata = (await import("@solana/spl-token")).getAssociatedTokenAddressSync(WSOL_MINT, pumpswap.coinCreatorVaultPda(sharingConfigPda(mint)), true);
-        pending += BigInt(await conn.getBalance(ata, "confirmed").catch(() => 0));
+        const p = await pumpswap.fetchPool(conn, canonicalPoolPda(mint)).catch(() => null);
+        if (p) {
+          pool = { address: p.address, quote: p.poolQuoteTokenAccount, coinCreator: p.coinCreator };
+          const ata = (await import("@solana/spl-token")).getAssociatedTokenAddressSync(WSOL_MINT, pumpswap.coinCreatorVaultPda(sharingConfigPda(mint)), true);
+          pending += BigInt(await conn.getBalance(ata, "confirmed").catch(() => 0));
+        }
       }
-      if (pending > RENT_FLOOR + 2_000_000n) due.push({ mint, graduated, shareholders: cfg.shareholders.map((s) => s.address), lamports: pending - RENT_FLOOR });
+      if (pending > RENT_FLOOR + 2_000_000n) due.push({ mint, curveCreator: curve.creator, graduated, sweepCurve: curve.creatorFeeWaiting > 0n, pool, shareholders: cfg.shareholders.map((x) => x.address), lamports: pending - RENT_FLOOR });
     }
-    for (let i = 0; i < due.length; i += 4) {
-      const batch = due.slice(i, i + 4);
-      const ixs = batch.flatMap((d) => [...(d.graduated ? [buildTransferCreatorFeesToPumpV2Ix({ payer: kp.publicKey, mint: d.mint })] : []), buildDistributeCreatorFeesV2Ix({ payer: kp.publicKey, mint: d.mint, shareholders: d.shareholders })]);
+    for (let i = 0; i < due.length; i += 3) {
+      const batch = due.slice(i, i + 3);
+      // Order matters: sweep (curve, then pool) -> move AMM fees to the pump vault -> distribute.
+      const ixs = batch.flatMap((d) => [
+        ...(d.sweepCurve ? [buildSweepCreatorFeeIx({ payer: kp.publicKey, mint: d.mint, creator: d.curveCreator })] : []),
+        ...(d.graduated && d.pool ? [buildPoolSweepCreatorFeeIx({ payer: kp.publicKey, pool: d.pool.address, poolQuoteTokenAccount: d.pool.quote, coinCreator: d.pool.coinCreator }), buildTransferCreatorFeesToPumpV2Ix({ payer: kp.publicKey, mint: d.mint })] : []),
+        buildDistributeCreatorFeesV2Ix({ payer: kp.publicKey, mint: d.mint, shareholders: d.shareholders }),
+      ]);
       try {
-        const built = await buildTx(conn, { payer: kp.publicKey, ixs, computeUnits: 150_000 * batch.length, priorityFeeSol: 0.0002, lookupTables: await pump.getPumpLookupTables(conn) });
+        const built = await buildTx(conn, { payer: kp.publicKey, ixs, computeUnits: 200_000 * batch.length, priorityFeeSol: 0.0002, lookupTables: await pump.getPumpLookupTables(conn) });
         const sig = await sendAndConfirm(conn, built, [kp]);
-        const sol = Number(batch.reduce((s, d) => s + d.lamports, 0n)) / 1e9;
+        const sol = Number(batch.reduce((x, d) => x + d.lamports, 0n)) / 1e9;
         await run("INSERT INTO buybacks (id, kind, mint, sol, tokens, signature, detail, created_at) VALUES (?,?,?,?,?,?,?,?)", [newId("tr"), "distribute", batch.map((d) => d.mint.toBase58()).join(","), sol, 0, sig, JSON.stringify({ mints: batch.length }), now()]);
         if (agent) await append("distribute", sig, agent.id, { mints: batch.map((d) => d.mint.toBase58()), sol });
         notes.push(`distributed ~${sol.toFixed(4)} SOL across ${batch.length} coin(s): ${sig.slice(0, 8)}…`);
